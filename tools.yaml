@@ -1,270 +1,182 @@
-tool:
-  name: nmap
-  version: "PoC-1"
-  command_template: |
-    nmap {{ targets }}{% if discovery %} {{ discovery | join(' ') }}{% endif %}{% if scans %} {{ scans | join(' ') }}{% endif %}{% if ports %} -p {{ ports }}{% endif %}{% if service_version %} {{ service_version }}{% endif %}{% if os_detect %} {{ os_detect | join(' ') }}{% endif %}{% if script %} {{ script | join(' ') }}{% endif %}{% if script_args %} --script-args {{ script_args }}{% endif %}{% if timing %} -T{{ timing }}{% endif %}{% if perf %} {{ perf | join(' ') }}{% endif %}{% if evasion %} {{ evasion | join(' ') }}{% endif %}{% if dns %} {{ dns | join(' ') }}{% endif %}{% if output %} {{ output | join(' ') }}{% endif %}{% if misc %} {{ misc | join(' ') }}{% endif %}
-  description: >
-    nmap 전체 옵션을 조합 가능하게 정의한 행동 스키마. 에이전트는 아래 제약을 지키며 모든 경우의 수를 탐색하거나 샘플링할 수 있다.
+tool: nmap
+version: "0.2"
 
-action_space:
-  # --- 필수 ---
-  targets:
-    type: list
-    min_items: 1
-    item_types: [ipv4, ipv6, cidr, hostname, range, input_file]
-    examples: ["10.0.0.1", "2001:db8::1", "10.0.0.0/24", "example.com", "10.0.0.1-10.0.0.50", "-iL hosts.txt"]
-    render:
-      - if: "value startswith('-iL ')"
-        as_is: true
-      - else: "{{ value }}"
-  # --- 호스트 발견/네임해결 ---
-  discovery:
-    type: set
-    allow_duplicates: false
-    items:
-      - flag: -sn         # Ping scan(포트스캔 없음)
-      - flag: -Pn         # 호스트 업으로 가정
-      - flag: -PE         # ICMP Echo
-      - flag: -PP         # ICMP Timestamp
-      - flag: -PM         # ICMP Netmask
-      - flag: -PR         # ARP
-      - flag: -PS         # TCP SYN discovery (옵션: 포트)
-        value:
-          optional: true
-          type: ports_small
-      - flag: -PA         # TCP ACK discovery (옵션: 포트)
-        value:
-          optional: true
-          type: ports_small
-      - flag: -PU         # UDP discovery (옵션: 포트)
-        value:
-          optional: true
-          type: ports_small
-      - flag: -PO         # IP protocol ping
-        value:
-          optional: true
-          type: ip_protocols
-      - flag: --traceroute
-      - flag: -n          # DNS 해석 안함
-      - flag: -R          # 역방향 DNS 강제
-  # --- 스캔 타입(조합 규칙 포함) ---
-  scans:
-    type: set
-    combine_rules:
-      mutex_groups:
-        - name: tcp_primary
-          members: [-sS, -sT, -sA, -sW, -sM, -sN, -sF, -sX]
-          allow_at_most: 1
-        - name: idle_only
-          members: [-sI]
-          allow_at_most: 1
-      allow_with:
-        - key: -sU        # UDP는 대부분 TCP 스캔과 동시 허용
-          with_any_of: [tcp_primary]
-    items:
-      - flag: -sS   # TCP SYN
-      - flag: -sT   # TCP Connect
-      - flag: -sU   # UDP
-      - flag: -sA   # TCP ACK
-      - flag: -sW   # TCP Window
-      - flag: -sM   # TCP Maimon
-      - flag: -sN   # TCP Null
-      - flag: -sF   # TCP FIN
-      - flag: -sX   # TCP Xmas
-      - flag: -sO   # IP protocol scan
-      - flag: -sI   # Idle scan
-        requires:
-          - key: zombie
-            value_type: hostname_or_ip
-            render: "-sI {{ value }}"
-      - flag: -sY   # SCTP INIT
-      - flag: -sZ   # SCTP COOKIE-ECHO
-  # --- 포트 지정 ---
-  ports:
-    type: string
-    optional: true
-    pattern_examples:
-      - "22"
-      - "80,443,8080"
-      - "1-1024"
-      - "U:53,111,T:21-25,80"
-      - "http,https"
-    note: nmap 포트표현 그대로 전달
-  # --- 서비스/버전 ---
-  service_version:
-    type: set
-    allow_duplicates: false
-    items:
-      - flag: -sV
-      - flag: --version-light
-      - flag: --version-all
-      - flag: --version-trace
-      - flag: --version-intensity
-        value:
-          type: int
-          min: 0
-          max: 9
-          render: "--version-intensity {{ value }}"
-  # --- NSE 스크립트 ---
-  script:
-    type: set
-    items:
-      - flag: -sC               # 기본 스크립트
-      - flag: --script          # 카테고리/패턴/리스트
-        value:
-          type: string
-          examples: ["default,vuln", "http-*", "safe,discovery"]
-  script_args:
-    type: string
-    optional: true
-    examples: ["user=foo,pass=bar", "http.useragent=Mozilla,unsafe=1"]
-  # --- OS 탐지 ---
-  os_detect:
-    type: set
-    items:
-      - flag: -O
-      - flag: --osscan-limit
-      - flag: --osscan-guess
-  # --- 타이밍/성능 ---
-  timing:
-    type: enum
-    values: [0,1,2,3,4,5]  # -T0..5
-  perf:
-    type: list
-    items:
-      - flag: --min-rate
-        value: {type: int, min: 1}
-      - flag: --max-rate
-        value: {type: int, min: 1}
-      - flag: --min-parallelism
-        value: {type: int, min: 1}
-      - flag: --max-parallelism
-        value: {type: int, min: 1}
-      - flag: --max-retries
-        value: {type: int, min: 0}
-      - flag: --host-timeout
-        value: {type: duration, examples: ["30s","2m","1h"]}
-      - flag: --scan-delay
-        value: {type: duration}
-      - flag: --max-scan-delay
-        value: {type: duration}
-      - flag: --min-rtt-timeout
-        value: {type: duration}
-      - flag: --max-rtt-timeout
-        value: {type: duration}
-      - flag: --initial-rtt-timeout
-        value: {type: duration}
-      - flag: --defeat-rst-ratelimit
-      - flag: --defeat-icmp-ratelimit
-  # --- 방화벽 회피/스푸핑 ---
-  evasion:
-    type: list
-    items:
-      - flag: -f                 # 작은 프래그먼트
-      - flag: --mtu
-        value: {type: int, multiple_of: 8, min: 8}
-      - flag: -D                 # 디코이
-        value: {type: list, item_type: hostname_or_ip, min_items: 1, render: "-D {{ value | join(',') }}"}
-      - flag: -S                 # 소스 IP 스푸핑
-        value: {type: hostname_or_ip}
-      - flag: -e                 # 인터페이스
-        value: {type: string}
-      - flag: -g                 # 소스포트
-        value: {type: int, min: 1, max: 65535}
-      - flag: --source-port
-        value: {type: int, min: 1, max: 65535}
-      - flag: --data-length
-        value: {type: int, min: 0, max: 1300}
-      - flag: --ip-options
-        value: {type: string}
-      - flag: --ttl
-        value: {type: int, min: 1, max: 255}
-      - flag: --spoof-mac
-        value: {type: string, examples: ["0", "vendor:apple", "00:11:22:33:44:55"]}
-      - flag: --badsum
-  # --- DNS ---
-  dns:
-    type: set
-    items:
-      - flag: --system-dns
-      - flag: --dns-servers
-        value:
-          type: list
-          item_type: ipv4
-          min_items: 1
-          render: "--dns-servers {{ value | join(',') }}"
-  # --- 출력/로깅 ---
-  output:
-    type: list
-    items:
-      - flag: -oA
-        value: {type: string, note: "basename"}
-      - flag: -oN
-        value: {type: filepath}
-      - flag: -oX
-        value: {type: filepath}
-      - flag: -oG
-        value: {type: filepath}
-      - flag: -oS
-        value: {type: filepath}
-      - flag: --append-output
-      - flag: -v
-        value: {type: int, min: 0, max: 5, optional: true}
-      - flag: -d
-        value: {type: int, min: 0, max: 9, optional: true}
-      - flag: --packet-trace
-      - flag: --reason
-      - flag: --open
-  # --- 기타 ---
-  misc:
-    type: set
-    items:
-      - flag: --noninteractive
-      - flag: --stats-every
-        value: {type: duration, examples: ["10s","1m"]}
-      - flag: --min-hostgroup
-        value: {type: int, min: 1}
-      - flag: --max-hostgroup
-        value: {type: int, min: 1}
-
-# ---- 타입 사전 ----
 types:
-  ipv4:
-    regex: "^((25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(25[0-5]|2[0-4]\\d|[01]?\\d\\d?)$"
-  ipv6:
-    regex: "^[0-9a-fA-F:]+$"
-  cidr:
-    regex: "^([0-9\\.]+|[0-9a-fA-F:]+)/\\d{1,3}$"
-  hostname:
-    regex: "^[a-zA-Z0-9.-]+$"
-  range:
-    regex: "^[0-9\\.]+-[0-9\\.]+$"
-  input_file:
-    regex: "^-iL\\s+.+$"
-  hostname_or_ip:
-    union: [hostname, ipv4, ipv6]
-  ports_small:
-    regex: "^\\d+(-\\d+)?(,\\d+(-\\d+)?)*$"
-  ip_protocols:
-    regex: "^(\\d+)(,\\d+)*$"
-  duration:
-    regex: "^\\d+(s|m|h)$"
-  filepath:
-    regex: "^[^\\s]+$"
+  ip_target:
+    desc: "IP/도메인 또는 CIDR"
+    validate:
+      regex: "^(?:[a-zA-Z0-9.-]+|(?:\\d{1,3}\\.){3}\\d{1,3}(?:/\\d{1,2})?)$"
+  ip_targets:
+    desc: "공백으로 구분된 다중 타겟"
+    validate:
+      regex: "^(.+)$"
+  port:
+    desc: "단일 포트"
+    validate:
+      range: [1, 65535]
+  port_list:
+    desc: "쉼표 구분 포트 리스트"
+    validate:
+      regex: "^(\\d{1,5})(,\\d{1,5})*$"
+  top_n:
+    desc: "상위 포트 개수"
+    validate:
+      range: [1, 10000]
+  timing:
+    desc: "스캔 속도 프로파일"
+    enum: ["T0","T1","T2","T3","T4","T5"]
+  bool:
+    enum: [true, false]
+  rate:
+    desc: "초당 최대 패킷 수"
+    validate:
+      range: [1, 100000]
+  retry_count:
+    desc: "재시도 최대 횟수"
+    validate:
+      range: [0, 20]
 
-# ---- 조합 유효성 규칙 ----
-validation:
-  rules:
-    - if_any_of: [-sI]
-      then_forbid: [-sS, -sT, -sA, -sW, -sM, -sN, -sF, -sX, -sU, -sO, -sY, -sZ]
-      reason: "Idle 스캔은 단독 운용 권장"
-    - if_any_of: [-sn]
-      then_forbid: ["-p", "-sV", "-O", "--script", "-sC"]
-      reason: "Ping 스캔은 포트/서비스/OS 스캔과 병행 불가"
-    - if_any_of: [-n]
-      then_forbid: [-R]
-      reason: "DNS 해석 옵션 충돌"
-    - require_format:
-        key: ports
-        when_present: true
-        type: string
+globals:
+  default_timing: "T3"
+  output_dir: "./scan_out"
+
+actions:
+
+  - name: host_discovery
+    desc: "핑 스윕(호스트 생존 확인)"
+    command_template: >
+      nmap -sn {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      timing:     {type: timing,    required: false}
+      save:       {type: bool,      required: false, default: false}
+      out_prefix: {type: ip_target, required: false, default: "scan"}
+    validation: {}
+
+  - name: tcp_syn_top
+    desc: "TCP SYN 상위 N 포트"
+    command_template: >
+      nmap -sS --top-ports {{top_n}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#no_ping}}-Pn{{/no_ping}} {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      top_n:      {type: top_n,     required: true}
+      timing:     {type: timing,    required: false}
+      no_ping:    {type: bool,      required: false, default: false}
+      save:       {type: bool,      required: false, default: true}
+      out_prefix: {type: ip_target, required: false, default: "tcp_syn_top"}
+    validation: {}
+
+  - name: tcp_connect_list
+    desc: "TCP Connect 지정 포트"
+    command_template: >
+      nmap -sT -p {{ports}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      ports:      {type: port_list,  required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: ip_target,  required: false, default: "tcp_connect_list"}
+    validation: {}
+
+  - name: udp_top
+    desc: "UDP 상위 N 포트"
+    command_template: >
+      nmap -sU --top-ports {{top_n}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#no_ping}}-Pn{{/no_ping}} {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      top_n:      {type: top_n,     required: true}
+      timing:     {type: timing,    required: false}
+      no_ping:    {type: bool,      required: false, default: true}
+      save:       {type: bool,      required: false, default: true}
+      out_prefix: {type: ip_target, required: false, default: "udp_top"}
+    validation: {}
+
+  - name: service_version
+    desc: "서비스 버전 식별"
+    command_template: >
+      nmap -sS -sV -p {{ports}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      ports:      {type: port_list,  required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: ip_target,  required: false, default: "service_version"}
+    validation: {}
+
+  - name: os_detect
+    desc: "OS 식별(권한 필요할 수 있음)"
+    command_template: >
+      nmap -O {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: ip_target,  required: false, default: "os_detect"}
+    validation: {}
+
+  - name: script_vuln
+    desc: "NSE vuln 스크립트 실행(+버전 스캔)"
+    command_template: >
+      nmap -sS -sV --script vuln -p {{ports}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      ports:      {type: port_list,  required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: ip_target,  required: false, default: "vuln_scan"}
+    validation: {}
+
+  - name: aggressive_profile
+    desc: "공격적 프로파일(-A: OS/버전/스크립트/트레이스)"
+    command_template: >
+      nmap -A --top-ports {{top_n}} {{targets}} -{{timing|default:T4}}
+      {{#no_ping}}-Pn{{/no_ping}} {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      top_n:      {type: top_n,     required: true}
+      timing:     {type: timing,    required: false}
+      no_ping:    {type: bool,      required: false, default: true}
+      save:       {type: bool,      required: false, default: true}
+      out_prefix: {type: ip_target, required: false, default: "aggr"}
+    validation: {}
+
+  - name: banner_grab
+    desc: "배너 수집(안전 NSE)"
+    command_template: >
+      nmap -sT -Pn --script banner -p {{ports}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      ports:      {type: port_list,  required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: ip_target,  required: false, default: "banner"}
+    validation: {}
+
+  - name: timing_tune
+    desc: "타이밍·재시도/속도 미세조정"
+    command_template: >
+      nmap -sS --top-ports {{top_n}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#max_rate}}--min-rate {{max_rate}}{{/max_rate}}
+      {{#retries}}--max-retries {{retries}}{{/retries}}
+      {{#host_timeout}}--host-timeout {{host_timeout}}s{{/host_timeout}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:     {type: ip_targets,  required: true}
+      top_n:       {type: top_n,       required: true}
+      timing:      {type: timing,      required: false}
+      max_rate:    {type: rate,        required: false}
+      retries:     {type: retry_count, required: false}
+      host_timeout:
+        desc: "호스트 타임아웃(초)"
+        validate: {range: [1, 3600]}
+      save:        {type: bool,        required: false, default: true}
+      out_prefix:  {type: ip_target,   required: false, default: "timing"}
+    validation: {}
