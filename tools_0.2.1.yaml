@@ -1,0 +1,250 @@
+tool: nmap
+version: "0.2.1"
+
+types:
+  ip_target:
+    desc: "IPv4/도메인 또는 IPv4/CIDR"
+    validate:
+      # IPv4 (정밀) 또는 도메인, 또는 IPv4/CIDR(/0-32)
+      regex: "^(?:([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9-]{1,63})+)|((?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)(?:/(?:[0-9]|[12][0-9]|3[0-2]))?))$"
+  ip_targets:
+    desc: "공백으로 구분된 다중 타겟(비어있지 않은 토큰들)"
+    validate:
+      regex: "^(?:\\S+(?:\\s+\\S+)*)$"
+  port:
+    desc: "단일 포트(1-65535)"
+    validate:
+      regex: "^(?:6553[0-5]|655[0-2]\\d|65[0-4]\\d{2}|6[0-4]\\d{3}|[1-5]\\d{4}|[1-9]\\d{0,3})$"
+  port_list:
+    desc: "쉼표 구분 포트 리스트(각 1-65535)"
+    validate:
+      regex: "^(?:(?:6553[0-5]|655[0-2]\\d|65[0-4]\\d{2}|6[0-4]\\d{3}|[1-5]\\d{4}|[1-9]\\d{0,3})(?:,(?:6553[0-5]|655[0-2]\\d|65[0-4]\\d{2}|6[0-4]\\d{3}|[1-5]\\d{4}|[1-9]\\d{0,3}))*)$"
+  top_n:
+    desc: "상위 포트 개수"
+    validate:
+      range: [1, 10000]
+  timing:
+    desc: "스캔 속도 프로파일"
+    enum: ["T0","T1","T2","T3","T4","T5"]
+  bool:
+    enum: [true, false]
+  rate:
+    desc: "초당 패킷 수"
+    validate:
+      range: [1, 100000]
+  retry_count:
+    desc: "재시도 최대 횟수"
+    validate:
+      range: [0, 20]
+  seconds:
+    desc: "초 단위 시간"
+    validate:
+      range: [1, 3600]
+  filename:
+    desc: "출력 파일 접두어(안전 문자)"
+    validate:
+      regex: "^[A-Za-z0-9._-]{1,64}$"
+  nse_category:
+    desc: "NSE 스크립트 카테고리"
+    enum: ["auth","broadcast","brute","default","discovery","dos","exploit","external","fuzzer","intrusive","malware","safe","version","vuln"]
+
+globals:
+  default_timing: "T3"
+  output_dir: "./scan_out"
+
+actions:
+
+  - name: host_discovery
+    desc: "핑 스윕(호스트 생존 확인)"
+    command_template: >
+      nmap -sn {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      timing:     {type: timing,    required: false}
+      save:       {type: bool,      required: false, default: false}
+      out_prefix: {type: filename,  required: false, default: "host_discovery"}
+    validation: {}
+
+  - name: tcp_syn_top
+    desc: "TCP SYN 상위 N 포트"
+    command_template: >
+      nmap -sS --top-ports {{top_n}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#no_ping}}-Pn{{/no_ping}} {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      top_n:      {type: top_n,     required: true}
+      timing:     {type: timing,    required: false}
+      no_ping:    {type: bool,      required: false, default: false}
+      save:       {type: bool,      required: false, default: true}
+      out_prefix: {type: filename,  required: false, default: "tcp_syn_top"}
+    validation: {}
+
+  - name: tcp_connect_list
+    desc: "TCP Connect 지정 포트"
+    command_template: >
+      nmap -sT -p {{ports}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      ports:      {type: port_list,  required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: filename,   required: false, default: "tcp_connect_list"}
+    validation: {}
+
+  - name: tcp_full_range
+    desc: "TCP 전체 포트 스캔(-p-)"
+    command_template: >
+      nmap -sS -p- {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      timing:     {type: timing,    required: false}
+      save:       {type: bool,      required: false, default: true}
+      out_prefix: {type: filename,  required: false, default: "tcp_full"}
+    validation: {}
+
+  - name: udp_top
+    desc: "UDP 상위 N 포트"
+    command_template: >
+      nmap -sU --top-ports {{top_n}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#no_ping}}-Pn{{/no_ping}} {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      top_n:      {type: top_n,     required: true}
+      timing:     {type: timing,    required: false}
+      no_ping:    {type: bool,      required: false, default: true}
+      save:       {type: bool,      required: false, default: true}
+      out_prefix: {type: filename,  required: false, default: "udp_top"}
+    validation: {}
+
+  - name: service_version
+    desc: "서비스 버전 식별"
+    command_template: >
+      nmap -sS -sV -p {{ports}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      ports:      {type: port_list,  required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: filename,   required: false, default: "service_version"}
+    validation: {}
+
+  - name: os_detect
+    desc: "OS 식별(권한 필요할 수 있음)"
+    command_template: >
+      nmap -O {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: filename,   required: false, default: "os_detect"}
+    validation: {}
+
+  - name: script_vuln
+    desc: "NSE vuln 스크립트 실행(+버전 스캔)"
+    command_template: >
+      nmap -sS -sV --script vuln -p {{ports}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      ports:      {type: port_list,  required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: filename,   required: false, default: "vuln_scan"}
+    validation: {}
+
+  - name: nse_by_category
+    desc: "NSE 카테고리 기반 스크립트 실행"
+    command_template: >
+      nmap -sS -p {{ports}} --script "{{category}}" {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:   {type: ip_targets,   required: true}
+      ports:     {type: port_list,    required: false, default: "1,21,22,23,25,53,80,110,139,143,443,445,3389"}
+      category:  {type: nse_category, required: true}
+      timing:    {type: timing,       required: false}
+      save:      {type: bool,         required: false, default: true}
+      out_prefix:{type: filename,     required: false, default: "nse_cat"}
+    validation: {}
+
+  - name: aggressive_profile
+    desc: "공격적 프로파일(-A: OS/버전/스크립트/트레이스)"
+    command_template: >
+      nmap -A --top-ports {{top_n}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#no_ping}}-Pn{{/no_ping}} {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      top_n:      {type: top_n,     required: true}
+      timing:     {type: timing,    required: false}
+      no_ping:    {type: bool,      required: false, default: true}
+      save:       {type: bool,      required: false, default: true}
+      out_prefix: {type: filename,  required: false, default: "aggr"}
+    validation: {}
+
+  - name: banner_grab
+    desc: "배너 수집(안전 NSE)"
+    command_template: >
+      nmap -sT -Pn --script banner -p {{ports}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      ports:      {type: port_list,  required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: filename,   required: false, default: "banner"}
+    validation: {}
+
+  - name: timing_tune
+    desc: "타이밍·재시도/속도 미세조정"
+    command_template: >
+      nmap -sS --top-ports {{top_n}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#min_rate}}--min-rate {{min_rate}}{{/min_rate}}
+      {{#max_rate}}--max-rate {{max_rate}}{{/max_rate}}
+      {{#retries}}--max-retries {{retries}}{{/retries}}
+      {{#host_timeout}}--host-timeout {{host_timeout}}s{{/host_timeout}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:     {type: ip_targets,  required: true}
+      top_n:       {type: top_n,       required: true}
+      timing:      {type: timing,      required: false}
+      min_rate:    {type: rate,        required: false}
+      max_rate:    {type: rate,        required: false}
+      retries:     {type: retry_count, required: false}
+      host_timeout:{type: seconds,     required: false}
+      save:        {type: bool,        required: false, default: true}
+      out_prefix:  {type: filename,    required: false, default: "timing"}
+    validation: {}
+
+  - name: ipv6_scan
+    desc: "IPv6 스캔(-6)"
+    command_template: >
+      nmap -6 -sS -p {{ports}} {{targets}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:
+        desc: "공백 구분 IPv6 타겟(주소 또는 CIDR)"
+        validate: {regex: "^(?:[0-9A-Fa-f:]+(?:/(?:[0-9]|[1-9]\\d|1[0-1]\\d|12[0-8]))?)(?:\\s+[0-9A-Fa-f:]+(?:/(?:[0-9]|[1-9]\\d|1[0-1]\\d|12[0-8]))?)*$"}
+        required: true
+      ports:      {type: port_list,  required: false, default: "1,22,80,443,3389"}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: filename,   required: false, default: "ipv6_scan"}
+    validation: {}
+
+  - name: exclude_targets
+    desc: "타겟 제외(--exclude)"
+    command_template: >
+      nmap -sS -p {{ports}} {{targets}} --exclude {{exclude}} -{{timing|default:{{globals.default_timing}}}}
+      {{#save}}-oA {{globals.output_dir}}/{{out_prefix}}{{/save}}
+    action_space:
+      targets:    {type: ip_targets, required: true}
+      ports:      {type: port_list,  required: false, default: "1,21,22,80,443,445,3389"}
+      exclude:    {desc: "쉼표 구분 제외 목록", validate: {regex: "^\\S+(?:,\\S+)*$"}, required: true}
+      timing:     {type: timing,     required: false}
+      save:       {type: bool,       required: false, default: true}
+      out_prefix: {type: filename,   required: false, default: "exclude_scan"}
+    validation: {}
