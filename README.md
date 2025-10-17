@@ -1,6 +1,5 @@
 # nahonjahanun-chimtootestganghwahacksup
 
-
 **액션 공간 만들기**
 1. 액션 정의 yaml 계층구조 만들기
 2. 결정 프로세스에서 툴 선택 -> 기능 선택 -> 세부적인 옵션이나 파라미터 선택
