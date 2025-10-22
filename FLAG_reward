@@ -1,0 +1,23 @@
+# FLAG 보상 함수 (기틀 버전)
+def flag_reward(flag_str, method, known_flags, found_paths):
+    """
+    플래그를 찾았을 때 보상을 부여하는 함수 (구조만 설계함)
+    - flag_str: 발견된 플래그 문자열
+    - method: 플래그를 찾은 탐색 경로(명령/행동 이름)
+    - known_flags: 미리 등록된 정답 플래그 해시 목록(dict)
+    - found_paths: 이미 찾은 플래그 및 경로 기록용 dict
+    """
+    reward = 0
+    # 1) 해시 비교 (예: SHA256)
+    flag_hash = hash(flag_str)
+    for key, val in known_flags.items():
+        if flag_hash == val:
+            # 2) 이미 찾았던 플래그인가?
+            if method not in found_paths.get(key, []):
+                reward = 5   # 기본 보상
+                reward += 2  # 새로운 경로로 찾은 보너스
+                found_paths.setdefault(key, []).append(method)
+            else:
+                reward = 5   # 동일 경로는 기본 보상만
+            break
+    return reward
